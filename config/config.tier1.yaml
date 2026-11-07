@@ -1,0 +1,9 @@
+# Tier 1: CPU only, 8 GB RAM. UNMEASURED starting points: test them and adjust on the dev set.
+# Use with:  python -m src.cli --config config/config.tier1.yaml build     (or export RAG_CONFIG=config/config.tier1.yaml)
+extends: config.yaml
+model: qwen2.5:3b-instruct      # check the exact tag in the Ollama library
+num_ctx: 4096
+generation: {num_predict: 400}
+pack: {context_token_budget: 2500}
+retrieval: {dense_k: 10, sparse_k: 10, rerank_pool: 10, final_k: 5}
+verify: {premise_sentences: 2, premise_max_words: 200}

@@ -1,0 +1,2 @@
+# EXAMPLE row (delete). Sample >= 300 claims from DEV-run outputs, balanced across labels, labelled by two annotators.
+{"claim_id": "c001", "qid": "q001", "claim": "EXAMPLE claim text", "evidence_text": "EXAMPLE cited passage", "label_a1": "Supported", "label_a2": "Supported", "label_final": "Supported"}

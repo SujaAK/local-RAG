@@ -1,0 +1,79 @@
+# All prompts, thresholds and chunk sizes live here, never in code (rule 4).
+model: qwen2.5:7b-instruct      # Tier 1 (CPU only): use a 3-4B tag. Check exact tag in the Ollama library.
+seed: 42
+temperature: 0
+num_ctx: 8192
+
+paths:
+  db: data/rag.sqlite
+  index_dir: data/index
+  runs_dir: runs
+  papers_dir: data/papers
+  eval_dir: data/eval
+  prompts_dir: config/prompts
+
+ingest:
+  margin_frac: 0.08             # top/bottom page fraction scanned for headers/footers
+  header_footer_frac: 0.4       # a margin line repeated on >= this share of pages is removed
+  min_pages_for_hf: 3
+  exclude_sections: [references, bibliography, acknowledgements, acknowledgments]
+
+chunk: {tokens: 384, overlap: 48}   # word-based token approximation; ablation, not a fixed choice
+
+embedding:
+  model: all-MiniLM-L6-v2       # decided by the pilot in S3
+  query_prefix: ""
+  doc_prefix: ""
+  batch_size: 32
+
+retrieval:
+  dense_k: 20
+  sparse_k: 20
+  fuse: rrf
+  rrf_k: 60
+  rerank: true
+  reranker: cross-encoder/ms-marco-MiniLM-L-6-v2
+  rerank_pool: 20
+  final_k: 8
+
+pack:
+  context_token_budget: 5000    # must fit inside num_ctx together with prompt + answer
+
+generation:
+  num_predict: 800
+
+validators: {enabled: true, mode: drop}   # drop | flag
+
+verify:
+  enabled: true
+  model: cross-encoder/nli-deberta-v3-base
+  label_order: [contradiction, entailment, neutral]   # confirm on the model card
+  tau_entail: 0.7               # placeholders; tune on dev only
+  tau_contra: 0.5
+  premise_sentences: 3
+  premise_max_words: 300
+
+abstain: {min_supported_fraction: 0.5}
+
+review:
+  overlap_sim: 0.85
+  top_papers: 10
+  missing_terms: 10
+
+privacy:
+  offline: true
+  encrypt_at_rest: false
+  embedding_noise_sigma: 0.0    # exploratory privacy-utility defence
+  log_raw_text: false           # logs store IDs and hashes only
+  cache_outputs: true           # forced off when encrypt_at_rest is true (cache would hold plaintext)
+
+hypergraph: {enabled: false, schema: config/schema.yaml}
+
+eval:
+  bootstrap_n: 10000
+  ks: [5, 10]
+  # Independent NLI model for AUTOMATIC citation metrics (must differ from verify.model, else circular).
+  # Human audit is the primary citation number; this is a cross-check. Confirm label order on the model card.
+  nli_check_model: MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli
+  nli_check_label_order: [entailment, neutral, contradiction]
+  audit_sample_size: 100

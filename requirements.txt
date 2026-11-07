@@ -1,0 +1,15 @@
+pymupdf
+sentence-transformers
+faiss-cpu
+rank-bm25
+streamlit
+ollama
+pyyaml
+pytest
+numpy
+pandas
+scipy
+cryptography
+psutil
+matplotlib
+tabulate

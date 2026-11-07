@@ -1,0 +1,3 @@
+Extract research findings from the text as structured tuples.
+For each finding give: method, task, dataset, metric, value, condition, limitation (empty string if absent),
+and "span": a verbatim substring of the text that supports the finding. Do not invent anything.

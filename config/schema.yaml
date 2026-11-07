@@ -1,0 +1,3 @@
+# Optional hypergraph schema (B8). Used only after gate G4 passes.
+hyperedge: Finding
+roles: [method, task, dataset, metric, value, condition, limitation]

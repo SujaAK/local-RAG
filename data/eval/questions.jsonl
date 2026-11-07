@@ -1,0 +1,4 @@
+# EXAMPLE rows only (delete these). One JSON object per line. Replace paper_id with your PDF filename stem.
+{"id": "q001", "split": "dev", "type": "single_hop", "answerable": true, "question": "EXAMPLE: What chunk size did paper X use?", "gold_evidence": [{"paper_id": "paperX", "text": "EXAMPLE verbatim span from paper X"}]}
+{"id": "q002", "split": "dev", "type": "unanswerable", "answerable": false, "question": "EXAMPLE: A question the corpus cannot answer", "gold_evidence": []}
+{"id": "q003", "split": "dev", "type": "conflict", "answerable": true, "question": "EXAMPLE: Do papers A and B agree on Y?", "gold_evidence": [{"paper_id": "paperA", "text": "EXAMPLE span"}, {"paper_id": "paperB", "text": "EXAMPLE span"}], "conflict_sides": ["paperA", "paperB"]}

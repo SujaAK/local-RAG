@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+data/papers/*.pdf
+data/index/*
+!data/index/.gitkeep
+data/*.sqlite
+data/*.sqlite.enc
+runs/*
+!runs/.gitkeep
+logs/*
+!logs/.gitkeep
+config/FROZEN
