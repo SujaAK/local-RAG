@@ -88,12 +88,24 @@ def test_metadata_does_not_leak_arxiv_line_or_heading_into_authors():
     assert m["year"] == 2025    # from the arXiv ID, not the later date in the stamp
 
 
-def test_guard_blocks_internet_but_allows_localhost_and_unix(tmp_path):
+def test_guard_blocks_internet_but_allows_localhost():
     block_network()
     s = socket.socket(socket.AF_INET)
     with pytest.raises(ConnectionError):
         s.connect(("93.184.216.34", 80))
     s.close()
+    srv = socket.socket(socket.AF_INET)          # loopback must NOT be blocked by the guard
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    cli = socket.socket(socket.AF_INET)
+    cli.connect(srv.getsockname())
+    cli.close()
+    srv.close()
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix sockets are not available on Windows Python")
+def test_guard_allows_unix_sockets(tmp_path):
+    block_network()
     path = str(tmp_path / "s.sock")
     srv = socket.socket(socket.AF_UNIX)
     srv.bind(path)

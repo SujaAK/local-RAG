@@ -25,7 +25,7 @@ def summary_table(df: pd.DataFrame, n_boot: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def paired_table(df: pd.DataFrame, n_boot: int, pairs=(("S0", "S1"), ("S1", "S2"), ("S2", "S3"))) -> pd.DataFrame:
+def paired_table(df: pd.DataFrame, n_boot: int, pairs=(("S0", "S1"), ("S1", "S2"), ("S2", "S3"), ("S3", "S3R"))) -> pd.DataFrame:
     recs = []
     for model, g in df.groupby("model"):
         wide = {m: g.pivot(index="qid", columns="system", values=m) for m in METRICS if m in g}

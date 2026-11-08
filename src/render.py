@@ -49,3 +49,36 @@ def render_markdown(result: dict, show_unsupported: bool = False) -> str:
     for s in source_list(result["evidence"]):
         lines.append(f"- {s}")
     return "\n".join(lines)
+
+
+def render_debug(result: dict, premises: dict | None = None, snippet: int = 220) -> str:
+    """Developer view: what was retrieved, every generated claim with its label and NLI scores, and why it was hidden."""
+    premises = premises or {}
+    lines = ["", "=== DEBUG ===", f"insufficient_evidence flag from model: {result.get('insufficient_flag')}",
+             f"thresholds: {result.get('thresholds')}",
+             f"abstained: {result['abstained']}  | generated: {result.get('n_generated')}  | kept after validators: {len(result['claims'])}",
+             "", "-- Retrieved evidence (id | paper | section | page):"]
+    for e in result["evidence"]:
+        text = " ".join(e["text"].split())
+        lines.append(f"[{e['id']}] {e['paper_id']} | {e['section']} | p.{e['page']}: {text[:snippet]}...")
+    lines += ["", "-- Claims (label | p_entail p_contra p_other | validators | cited ids):"]
+    for i, c in enumerate(result["claims"]):
+        n = c.get("nli") or {}
+        probs = (f"{n.get('p_entail', 0):.2f} {n.get('p_contra', 0):.2f} {n.get('p_contra_other', 0):.2f}"
+                 if n else "n/a")
+        v = c.get("validators") or {}
+        lines.append(f"{i + 1}. [{c.get('label', 'not verified')}] {probs} | validators ok={v.get('ok')} "
+                     f"| cites {c.get('evidence_ids')}")
+        if c.get("citation_repaired"):
+            lines.append(f"   citation repaired: {c.get('original_evidence_ids')} -> {c.get('evidence_ids')}")
+        for t in c.get("repair_trace") or []:
+            lines.append(f"   repair tried {t['id']} ({t.get('paper_id')}): p_entail={t['p_entail']} p_contra={t['p_contra']}")
+        lines.append(f"   claim: {c['text']}")
+        if i in premises:
+            lines.append(f"   NLI premise: {premises[i][:snippet * 2]}")
+    if result.get("dropped_claims"):
+        lines.append("")
+        lines.append("-- Dropped by the deterministic validators:")
+        for c in result["dropped_claims"]:
+            lines.append(f"   - {c['text']}  | reasons: {c.get('validators')}")
+    return "\n".join(lines)

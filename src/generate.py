@@ -29,23 +29,54 @@ def _messages(cfg, system_file: str, question: str, evidence_text: str):
             {"role": "user", "content": user}]
 
 
-def _chat(cfg, model, messages, fmt, cache: OutputCache) -> str:
+def _chat_ollama(cfg, model, messages, fmt, options) -> str:
     import ollama
 
+    resp = ollama.chat(model=model, messages=messages, format=fmt, options=options)
+    return resp["message"]["content"]
+
+
+def _chat_llamacpp(cfg, model, messages, fmt) -> str:
+    """llama.cpp `llama-server` (OpenAI-compatible). Context size is set when the server starts (-c).
+    Uses only the standard library; the proxy handler is emptied so Windows system proxies never see
+    the localhost request."""
+    import urllib.request
+
+    lc = cfg.get("llamacpp", {}) or {}
+    url = str(lc.get("url", "http://127.0.0.1:8080")).rstrip("/") + "/v1/chat/completions"
+    body = {"model": model, "messages": messages, "temperature": cfg.temperature, "seed": cfg.seed,
+            "max_tokens": cfg.generation.num_predict, "stream": False}
+    if fmt:
+        body["response_format"] = {"type": "json_schema",
+                                   "json_schema": {"name": "output", "strict": True, "schema": fmt}}
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=float(lc.get("timeout", 900))) as r:
+        return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
+
+
+def _chat(cfg, model, messages, fmt, cache: OutputCache) -> str:
+    backend = str(cfg.get("backend", "ollama")).lower()
     options = {"temperature": cfg.temperature, "seed": cfg.seed, "num_ctx": cfg.num_ctx,
                "num_predict": cfg.generation.num_predict}
-    key = cache.key(model, messages, options, fmt)
+    key = cache.key(backend, model, messages, options, fmt)
     hit = cache.get(key)
     if hit is not None:
         return hit
-    resp = ollama.chat(model=model, messages=messages, format=fmt, options=options)
-    text = resp["message"]["content"]
+    if backend == "llamacpp":
+        text = _chat_llamacpp(cfg, model, messages, fmt)
+    elif backend == "ollama":
+        text = _chat_ollama(cfg, model, messages, fmt, options)
+    else:
+        raise ValueError(f"unknown backend: {backend!r} (use 'ollama' or 'llamacpp')")
     cache.set(key, text)
     return text
 
 
 def generate_claims(cfg, model, question, evidence_text, cache) -> dict:
-    raw = _chat(cfg, model, _messages(cfg, "system_claims.txt", question, evidence_text),
+    # the claims prompt is selectable (config key `claims_prompt`) so prompt variants can be compared as ablations
+    raw = _chat(cfg, model, _messages(cfg, str(cfg.get("claims_prompt", "system_claims.txt")), question, evidence_text),
                 CLAIM_SCHEMA, cache)
     try:
         data = json.loads(raw)

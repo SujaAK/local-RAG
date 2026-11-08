@@ -23,7 +23,12 @@ def corpus_hash(cfg) -> str:
     return sha256_text("\n".join(hashes))
 
 
-def model_digest(model: str) -> str:
+def model_digest(model: str, cfg=None) -> str:
+    if cfg is not None and str(cfg.get("backend", "ollama")).lower() == "llamacpp":
+        path = (cfg.get("llamacpp", {}) or {}).get("model_path")
+        if path and Path(path).exists():
+            return "sha256:" + sha256_file(path)
+        return "unknown (set llamacpp.model_path to the .gguf file so the manifest can hash it)"
     try:
         import ollama
 
@@ -62,7 +67,7 @@ def write_manifest(cfg, run_dir: Path, models: list[str], extra: dict | None = N
         "git_commit": _git_commit(),
         "config_hash": config_hash(cfg),
         "lock_file_hash": sha256_file(lock) if lock.exists() else "missing (run pip freeze > requirements.lock)",
-        "llms": {mm: model_digest(mm) for mm in models},
+        "llms": {mm: model_digest(mm, cfg) for mm in models},
         "embedding_model": cfg.embedding.model,
         "reranker_model": cfg.retrieval.reranker,
         "nli_model": cfg.verify.model,

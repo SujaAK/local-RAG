@@ -25,14 +25,43 @@ def safe_id(stem: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", stem)
 
 
+HEADING_STOP = {"and", "of", "the", "for", "in", "on", "to", "a", "an", "with", "&", "vs", "via", "from", "by", "at"}
+
+
+def _title_case_ok(words: list[str]) -> bool:
+    """Words after a heading keyword must look like a title (Capitalised or a short stop word), not a sentence."""
+    for w in words:
+        if any(ch.isdigit() for ch in w):
+            if len(w) > 3:                                # '85.2' is a table value; 'A', '2', 'A.1' are labels
+                return False
+            continue
+        if not (w[:1].isupper() or not w[:1].isalpha() or w.lower() in HEADING_STOP):
+            return False
+    return True
+
+
 def is_heading(text: str, size: float, bold: bool, body_size: float) -> bool:
+    """A real section heading, not a body line that merely starts with a keyword such as 'results in ...'."""
     t = text.strip()
     if not t or len(t) > 100:
         return False
-    if size >= body_size * 1.25 and len(t) < 80:
+    if not (t[0].isupper() or t[0].isdigit()):          # headings never start in lower case
+        return False
+    words = t.split()
+    if len(words) > 10 or t.endswith((",", ";")):
+        return False
+    if size >= body_size * 1.25 and len(t) < 80 and not t.endswith("."):
         return True
-    pattern = bool(HEADING_RE.match(t)) or bool(NUMBERED_RE.match(t))
-    return pattern and (bold or size >= body_size * 1.05 or t.isupper() or len(t) < 40)
+    if t.endswith(".") and len(words) > 3:               # a sentence, not a heading
+        return False
+    m = HEADING_RE.match(t)
+    if m:
+        ok = _title_case_ok(t[m.end():].split())
+    elif NUMBERED_RE.match(t):
+        ok = len(words) <= 9
+    else:
+        ok = False
+    return ok and (bold or size >= body_size * 1.05 or t.isupper() or len(t) < 40)
 
 
 def clean_heading(t: str) -> str:
@@ -156,7 +185,7 @@ def read_overrides(papers_dir: Path) -> dict:
         return {row["filename"]: row for row in csv.DictReader(f)}
 
 
-def ingest_all(cfg, passphrase=None) -> dict:
+def ingest_all(cfg, passphrase=None, force: bool = False) -> dict:
     papers_dir = rpath(cfg, "papers_dir")
     pdfs = sorted(papers_dir.glob("*.pdf"))
     overrides = read_overrides(papers_dir)
@@ -166,7 +195,7 @@ def ingest_all(cfg, passphrase=None) -> dict:
         sha = sha256_file(pdf)
         pid = safe_id(pdf.stem)
         row = conn.execute("SELECT sha256 FROM papers WHERE paper_id=?", (pid,)).fetchone()
-        if row and row["sha256"] == sha:
+        if not force and row and row["sha256"] == sha:
             log.info("skip unchanged %s", pid)
             continue
         pages = strip_headers_footers(

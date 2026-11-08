@@ -39,9 +39,12 @@ def export(run: Path, n: int, seed: int, cfg, pw):
     claims = claims[:n]
     checker = None
     if cfg.eval.nli_check_model:
+        from src.embed import load_embedder
         from src.verify import Verifier
 
-        checker = Verifier(cfg, None, model=cfg.eval.nli_check_model, label_order=cfg.eval.nli_check_label_order)
+        # Same premise builder as eval.run_eval (embedding-based top sentences), so auto labels are comparable.
+        checker = Verifier(cfg, load_embedder(cfg), model=cfg.eval.nli_check_model,
+                           label_order=cfg.eval.nli_check_label_order)
     sheet, key = [], []
     for k, c in enumerate(claims):
         cid = f"a{k:04d}"

@@ -18,6 +18,7 @@ SYSTEMS = {
     "S1": dict(mode="hybrid", rerank=True, gen="baseline", validate=False, verify=False, abstain=None),
     "S2": dict(mode="hybrid", rerank=True, gen="claims", validate=True, verify=False, abstain="flag"),
     "S3": dict(_S3),
+    "S3R": dict(_S3, repair=True),         # S3 + citation repair: re-point a failed citation to a passage that entails the claim
     "S4": dict(_S3, offline_guard=True),   # S3 + at-rest encryption (privacy.encrypt_at_rest) + offline mode
     "S5": dict(_S3, graph=True),           # only if gate G4 passes
 }
@@ -89,8 +90,15 @@ class Pipeline:
                 dropped = [c for c in raw_claims if not c["validators"]["ok"]]
         s = lap("validate", s)
         if spec["verify"] and cfg.verify.enabled and claims:
-            for c, r in zip(claims, self.verifier.verify_claims(claims, evidence, tau_entail, tau_contra)):
-                c.update({"label": r["label"], "nli": {k: v for k, v in r.items() if k != "label"}})
+            kw = {"repair": True} if spec.get("repair") else {}
+            for c, r in zip(claims, self.verifier.verify_claims(claims, evidence, tau_entail, tau_contra, **kw)):
+                c.update({"label": r["label"],
+                          "nli": {k: v for k, v in r.items() if k not in ("label", "repaired_ids", "repair_trace")}})
+                if r.get("repair_trace") is not None:
+                    c["repair_trace"] = r["repair_trace"]
+                if r.get("repaired_ids"):
+                    c["original_evidence_ids"], c["evidence_ids"], c["citation_repaired"] = (
+                        c["evidence_ids"], r["repaired_ids"], True)
         s = lap("verify", s)
         abstained = False
         if spec["abstain"] == "flag":
@@ -102,6 +110,9 @@ class Pipeline:
             "question": question, "system": system, "model": model,
             "retrieved": [c["chunk_id"] for c in retrieved], "evidence": evidence,
             "claims": claims, "dropped_claims": dropped, "n_generated": len(raw_claims),
+            "n_repaired": sum(1 for c in claims if c.get("citation_repaired")),
+            "thresholds": {"tau_entail": cfg.verify.tau_entail if tau_entail is None else tau_entail,
+                           "tau_contra": cfg.verify.tau_contra if tau_contra is None else tau_contra},
             "insufficient_flag": gen["insufficient_evidence"], "abstained": abstained,
             "latency": {**t, "total": round(time.perf_counter() - t0, 4)},
         }

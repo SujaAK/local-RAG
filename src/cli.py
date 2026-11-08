@@ -12,11 +12,14 @@ def main():
     ap = argparse.ArgumentParser(prog="local-rag")
     ap.add_argument("--config", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("build", help="ingest PDFs, chunk, embed, index")
+    b = sub.add_parser("build", help="ingest PDFs, chunk, embed, index")
+    b.add_argument("--force", action="store_true", help="re-parse PDFs even if unchanged")
     a = sub.add_parser("ask")
     a.add_argument("question")
     a.add_argument("--system", default="S3")
     a.add_argument("--model", default=None)
+    a.add_argument("--debug", action="store_true", help="also print retrieved text, every claim with label and NLI scores")
+    a.add_argument("--snippet", type=int, default=220, help="characters of each retrieved passage shown by --debug")
     r = sub.add_parser("review")
     r.add_argument("file")
     sub.add_parser("audit")
@@ -39,7 +42,7 @@ def main():
         from .embed import build_index
         from .ingest import ingest_all
 
-        print(json.dumps(ingest_all(cfg, pw)))
+        print(json.dumps(ingest_all(cfg, pw, args.force)))
         print("chunks:", chunk_all(cfg, pw))
         print("indexed:", build_index(cfg, pw))
     elif args.cmd == "ask":
@@ -48,6 +51,17 @@ def main():
         p = Pipeline(cfg, pw)
         res = p.answer(args.question, args.system, args.model)
         print(res["markdown"])
+        if args.debug:
+            from .render import render_debug
+
+            premises = {}
+            if res["claims"] and any("nli" in c for c in res["claims"]):
+                by_id = {e["id"]: e for e in res["evidence"]}
+                for i, c in enumerate(res["claims"]):
+                    cited = [by_id[x]["text"] for x in c.get("evidence_ids", []) if x in by_id]
+                    if cited:
+                        premises[i] = p.verifier.score(c["text"], cited)[0]
+            print(render_debug(res, premises, args.snippet))
         print("\nlatency:", res["latency"])
     elif args.cmd == "review":
         from pathlib import Path
