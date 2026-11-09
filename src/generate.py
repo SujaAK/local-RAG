@@ -56,11 +56,49 @@ def _chat_llamacpp(cfg, model, messages, fmt) -> str:
         return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
 
 
+_IDENT: dict[str, str] = {}
+
+
+def server_identity(cfg) -> str:
+    """What llama-server has actually loaded (model file + context size), asked from the server itself.
+    Used in the output-cache key and the run manifest, because `model` in the config is only a label and
+    swapping the .gguf (e.g. 1.5B -> 3B) must never return the old model's cached answers."""
+    import urllib.request
+
+    base = str((cfg.get("llamacpp", {}) or {}).get("url", "http://127.0.0.1:8080")).rstrip("/")
+    if base in _IDENT:
+        return _IDENT[base]
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    ident = "unknown"
+    for path in ("/props", "/v1/models"):
+        try:
+            with opener.open(base + path, timeout=5) as r:
+                d = json.loads(r.read().decode("utf-8"))
+        except Exception:
+            continue
+        if path == "/props":
+            mp = d.get("model_path") or d.get("model_alias")
+            n_ctx = (d.get("default_generation_settings") or {}).get("n_ctx")
+            if mp:
+                ident = f"{mp}|n_ctx={n_ctx}"
+        else:
+            m = (d.get("data") or [{}])[0]
+            meta = m.get("meta") or {}
+            if m.get("id"):
+                ident = f"{m['id']}|params={meta.get('n_params')}|size={meta.get('size')}"
+        if ident != "unknown":
+            break
+    if ident != "unknown":
+        _IDENT[base] = ident
+    return ident
+
+
 def _chat(cfg, model, messages, fmt, cache: OutputCache) -> str:
     backend = str(cfg.get("backend", "ollama")).lower()
     options = {"temperature": cfg.temperature, "seed": cfg.seed, "num_ctx": cfg.num_ctx,
                "num_predict": cfg.generation.num_predict}
-    key = cache.key(backend, model, messages, options, fmt)
+    ident = server_identity(cfg) if backend == "llamacpp" else ""
+    key = cache.key(backend, model, ident, messages, options, fmt)
     hit = cache.get(key)
     if hit is not None:
         return hit

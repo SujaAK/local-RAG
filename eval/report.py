@@ -10,7 +10,8 @@ import pandas as pd
 from . import stats
 
 METRICS = ["recall@5", "recall@10", "allgold@10", "mrr", "ndcg@10", "citation_precision_auto", "citation_recall_auto",
-           "fabrication_rate", "fabrication_rate_raw", "coverage", "latency_total"]
+           "fabrication_rate", "fabrication_rate_raw", "coverage", "answered", "parse_error", "n_repaired", "repaired_rate",
+           "latency_total"]
 
 
 def summary_table(df: pd.DataFrame, n_boot: int) -> pd.DataFrame:

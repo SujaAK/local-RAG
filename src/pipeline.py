@@ -114,6 +114,7 @@ class Pipeline:
             "thresholds": {"tau_entail": cfg.verify.tau_entail if tau_entail is None else tau_entail,
                            "tau_contra": cfg.verify.tau_contra if tau_contra is None else tau_contra},
             "insufficient_flag": gen["insufficient_evidence"], "abstained": abstained,
+            "parse_error": bool(gen.get("parse_error")),
             "latency": {**t, "total": round(time.perf_counter() - t0, 4)},
         }
         result["shown"] = [] if abstained else render.shown_indices(claims)

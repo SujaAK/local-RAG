@@ -28,7 +28,9 @@ def model_digest(model: str, cfg=None) -> str:
         path = (cfg.get("llamacpp", {}) or {}).get("model_path")
         if path and Path(path).exists():
             return "sha256:" + sha256_file(path)
-        return "unknown (set llamacpp.model_path to the .gguf file so the manifest can hash it)"
+        from .generate import server_identity
+
+        return "server-reported: " + server_identity(cfg)
     try:
         import ollama
 

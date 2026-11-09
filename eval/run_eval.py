@@ -33,7 +33,11 @@ def score_one(pipe: Pipeline, q: dict, res: dict, ks, checker) -> dict:
     row = {"qid": q["id"], "type": q.get("type"), "answerable": q.get("answerable", True),
            "abstained": res["abstained"], "n_generated": res["n_generated"],
            "n_shown": len(res["shown"]), "coverage": M.coverage(len(res["shown"]), res["n_generated"]),
-           "latency_total": res["latency"]["total"]}
+           "latency_total": res["latency"]["total"],
+           "answered": float((not res["abstained"]) and len(res["shown"]) > 0),
+           "parse_error": float(bool(res.get("parse_error"))),
+           "n_repaired": res.get("n_repaired", 0),
+           "repaired_rate": (res.get("n_repaired", 0) / len(res["shown"])) if res["shown"] else float("nan")}
     retrieved = [pipe.chunks[c] for c in res["retrieved"]]
     row.update(M.retrieval_metrics(retrieved, q.get("gold_evidence", []), ks))
     ev = {e["id"]: e for e in res["evidence"]}
@@ -52,7 +56,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
     ap.add_argument("--split", choices=["dev", "test"], default="dev")
-    ap.add_argument("--systems", default="S0,S1,S2,S3")
+    ap.add_argument("--systems", default="S0,S1,S2,S3,S3R")
     ap.add_argument("--models", default=None, help="comma-separated Ollama tags (default: config model)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--no-nli-metrics", action="store_true")
