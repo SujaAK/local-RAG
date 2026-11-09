@@ -86,18 +86,20 @@ the PDFs themselves, and anything Ollama or the OS keeps (check your Ollama serv
 the index and database are decrypted into RAM. Out of scope: malware on the host, device theft. Do not claim more than this in the paper.
 
 ## Caveats you should know
-- **Citation metrics:** the `*_auto` columns use an NLI model *different from* the verifier (`eval.nli_check_model`) and the
-  same top-sentence premise builder as S3 (`src.verify.build_premise`). If you set both to the same model the run warns
-  "CIRCULAR". They are a cross-check; the human audit is the number to report first. Confirm the check model's label order on its model card.
-- **Retrieval metrics:** a chunk hits a gold span only if >= 90% of the span's words appear as one contiguous run in the chunk
-  (OCR typos tolerated). Keep gold spans short (<= ~40 words) and inside one chunk or the chunk overlap. nDCG credits each gold span once (<= 1).
-- **Token counts are word-based approximations** (`approx_tokens`); keep `pack.context_token_budget` well below `num_ctx`.
-- **Verify the NLI label order** (`verify.label_order`); general NLI models can drop sharply on scientific text (R20), so calibrate on your own pairs.
-- **Heading/metadata extraction is heuristic.** Check 20 papers and use `papers.csv` to override.
-- `offline_guard` blocks non-localhost IP connections in-process (Unix sockets allowed); the OS-level test (T11, `scripts/run_offline.sh --netns`, Linux + root) is the real pass criterion.
-- **Hypergraph (optional):** `python -m src.cli hypergraph build --max-papers 5` -> `export-pilot` -> label the `correct` column -> `precision`.
-  Stop if precision is below your pre-set threshold. Entity normalisation is an alias table only (`config/aliases.yaml`, optional); no embedding-similarity merge.
-  Retrieval expansion (S5) is implemented but has no evaluation data.
-- **Untested here:** anything needing Ollama, sentence-transformers/FAISS models, the NLI models or Streamlit (no models in the build sandbox). Unit tests cover the pure logic, the pipeline with fakes, the encrypted store, and the offline guard.
-- Eval and annotation files in `data/eval/` contain EXAMPLE rows only; replace them.
-- This is not a plagiarism tool and gives no novelty score. Numbers in the PDF's Part A come from snippets; verify against the original papers (C9).
+
+- **Evaluation status:** The current development dataset contains 23 questions: 19 single-hop and 4 unanswerable. It contains no multi-hop or conflict questions and has no held-out test split. Results are exploratory and must not be presented as test-set performance or evidence of generalization.
+- **System comparison:** S1, S2 and S3 were evaluated on the same 23 development questions using Qwen 2.5 1.5B Instruct. Retrieval metrics were identical across systems. S3 had significantly lower claim coverage and answer rate than S2 after Holm correction. This demonstrates more conservative output behaviour, not improved factual correctness.
+- **Latency interpretation:** S3's lower observed latency is confounded by its higher abstention rate. Do not interpret it as an independent efficiency improvement.
+- **Citation metrics:** Independent automatic citation NLI metrics were disabled in the reported comparison because the independent checker model was unavailable offline. The verifier still operated within S3. Do not report independent automatic citation accuracy from this run.
+- **Human audit:** An AI-assisted audit sheet was generated, but its labels have not been independently validated by human annotators. Do not report its scores as human factual-accuracy measurements or claim inter-annotator agreement.
+- **Raw fabrication metric:** `fabrication_rate_raw` represents validator failures, not factual hallucination or factual correctness.
+- **Claim coverage:** The reported coverage metric is claim retention (`n_shown / n_generated`), not answer coverage.
+- **Retrieval metrics:** A chunk hits a gold span only if at least 90% of the span's words appear as one contiguous run in the chunk (OCR typos tolerated). Keep gold spans short (approximately 40 words or fewer) and inside one chunk or its overlap. nDCG credits each gold span once (maximum 1).
+- **Token counts:** `approx_tokens` uses word-based approximations. Keep `pack.context_token_budget` well below `num_ctx`.
+- **NLI verification:** Verify `verify.label_order`. General NLI models can perform poorly on scientific text; calibrate on domain-specific pairs before making strong reliability claims.
+- **Heading/metadata extraction:** This is heuristic. Check a sample of papers and use `papers.csv` to override incorrect metadata.
+- **Offline protection:** `offline_guard` blocks non-localhost IP connections in-process (Unix sockets allowed). The OS-level test (`scripts/run_offline.sh --netns`, Linux + root) is the stronger isolation test. Do not describe the in-process guard as complete OS-level network isolation.
+- **Hypergraph:** Hypergraph retrieval expansion is implemented but has not been experimentally validated. No claim about its effectiveness is supported by the current results.
+- **Privacy:** Encryption at rest does not protect decrypted data in RAM, source PDFs, or data retained by Ollama or the operating system. See the privacy section above.
+- **Streamlit and environment:** The local application and model-backed pipeline were exercised in the Windows environment described in the experiment manifest. Results should not be generalized to other hardware without testing.
+- This is not a plagiarism tool and gives no novelty score
