@@ -1,0 +1,23 @@
+﻿extends: config.yaml
+backend: llamacpp
+model: qwen2.5-1.5b-instruct
+llamacpp:
+  url: http://127.0.0.1:8080
+  timeout: 900
+  model_path: ""
+num_ctx: 4096
+generation:
+  num_predict: 300
+pack:
+  context_token_budget: 2600
+retrieval:
+  dense_k: 15
+  sparse_k: 15
+  rerank_pool: 12
+  final_k: 6
+verify:
+  premise_sentences: 3
+  premise_max_words: 200
+  premise_mode: top_n
+  premise_pool: 6
+claims_prompt: system_claims_v2.txt
