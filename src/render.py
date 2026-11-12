@@ -12,12 +12,15 @@ def shown_indices(claims: list[dict], show_unsupported: bool = False) -> list[in
 
 
 def decide_abstain(claims: list[dict], insufficient_flag: bool, min_supported_fraction: float,
-                   use_fraction: bool = True) -> bool:
+                   use_fraction: bool = True, count_contested: bool = False) -> bool:
+    """count_contested=True: a claim flagged Contested is shown with a warning, so it counts as an answer and
+    a purely contested answer is no longer hidden behind an abstention (config: abstain.count_contested, default False until contested detection is validated)."""
     if insufficient_flag or not claims:
         return True
     if not use_fraction:
         return False
-    sup = sum(1 for c in claims if c.get("label") == "Supported")
+    ok = ("Supported", "Contested") if count_contested else ("Supported",)
+    sup = sum(1 for c in claims if c.get("label") in ok)
     return (sup / len(claims)) < min_supported_fraction
 
 

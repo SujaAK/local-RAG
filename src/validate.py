@@ -7,7 +7,8 @@ import re
 
 from .utils import norm_text
 
-NUM_RE = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?![\w])")
+# A number may be followed by a unit or suffix ('3.5x', '1.5B', '85%'); ordinals ('3rd') are not numbers.
+NUM_RE = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?!\d)(?!(?:st|nd|rd|th)\b)")
 QUOTE_RE = re.compile(r'"([^"]{4,})"|“([^”]{4,})”')
 
 

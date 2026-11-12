@@ -105,7 +105,8 @@ class Pipeline:
             abstained = render.decide_abstain(claims, gen["insufficient_evidence"], 0, use_fraction=False)
         elif spec["abstain"] == "full":
             abstained = render.decide_abstain(claims, gen["insufficient_evidence"],
-                                              cfg.abstain.min_supported_fraction)
+                                              cfg.abstain.min_supported_fraction,
+                                              count_contested=bool(cfg.abstain.get("count_contested", False)))
         result = {
             "question": question, "system": system, "model": model,
             "retrieved": [c["chunk_id"] for c in retrieved], "evidence": evidence,
@@ -114,7 +115,7 @@ class Pipeline:
             "thresholds": {"tau_entail": cfg.verify.tau_entail if tau_entail is None else tau_entail,
                            "tau_contra": cfg.verify.tau_contra if tau_contra is None else tau_contra},
             "insufficient_flag": gen["insufficient_evidence"], "abstained": abstained,
-            "parse_error": bool(gen.get("parse_error")),
+            "parse_error": bool(gen.get("parse_error")), "truncated": bool(gen.get("truncated")),
             "latency": {**t, "total": round(time.perf_counter() - t0, 4)},
         }
         result["shown"] = [] if abstained else render.shown_indices(claims)

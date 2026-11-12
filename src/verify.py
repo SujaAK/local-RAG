@@ -98,16 +98,27 @@ class Verifier:
         'max_sentence': each of the top `premise_pool` usable sentences is scored on its own and the best
         entailing one is used (the most contradicting one if nothing entails, so contradictions stay visible)."""
         v = self.cfg.verify
-        if str(v.get("premise_mode", "top_n")) == "max_sentence":
+        mode = str(v.get("premise_mode", "top_n"))
+        best = None
+        if mode in ("max_sentence", "union"):
             sents = top_sentences(claim, texts, int(v.get("premise_pool", 6)), self.embedder)
             if sents:
                 ps = self.probs([(x, claim) for x in sents])
                 i = int(ps[:, 1].argmax())
                 if ps[i, 1] < 0.5:
                     i = int(ps[:, 0].argmax())
-                return cap_words(sents[i], v.premise_max_words), ps[i]
+                best = (cap_words(sents[i], v.premise_max_words), ps[i])
+                if mode == "max_sentence":
+                    return best
         prem = self.premise(claim, texts)
-        return prem, self.probs([(prem, claim)])[0]
+        joined = (prem, self.probs([(prem, claim)])[0])
+        if mode == "union" and best is not None:
+            # 'union': a claim counts as supported if EITHER one sentence OR the joined top-n premise entails it
+            # (single sentences miss composite claims; the joined premise confuses the NLI model on verbatim ones).
+            if max(best[1][1], joined[1][1]) >= 0.5:
+                return best if best[1][1] >= joined[1][1] else joined
+            return best if best[1][0] >= joined[1][0] else joined      # nothing entails: keep the stronger contradiction
+        return joined
 
     def entails(self, texts: list[str], hypothesis: str, tau: float | None = None) -> bool:
         """Entailment decision on the top-sentence premise. tau=None -> entailment must be the argmax
@@ -170,7 +181,9 @@ class Verifier:
                        "label": "Insufficient", "score": 0.0}
             else:
                 p = self.score(c["text"], cited)[1]
-                p_other = float(self.probs([(self.premise(c["text"], others), c["text"])])[0][0]) if others else 0.0
+                use_contested = bool(v.get("contested", True))       # False: skip the cross-passage contradiction check
+                p_other = (float(self.probs([(self.premise(c["text"], others), c["text"])])[0][0])
+                           if others and use_contested else 0.0)
                 res = {"p_contra": float(p[0]), "p_entail": float(p[1]), "p_neutral": float(p[2]),
                        "p_contra_other": p_other, "score": float(p[1]),
                        "label": label_from_probs(p[1], p[0], p[2], p_other, tau_e, tau_c)}

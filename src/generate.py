@@ -36,7 +36,7 @@ def _chat_ollama(cfg, model, messages, fmt, options) -> str:
     return resp["message"]["content"]
 
 
-def _chat_llamacpp(cfg, model, messages, fmt) -> str:
+def _chat_llamacpp(cfg, model, messages, fmt, num_predict=None) -> str:
     """llama.cpp `llama-server` (OpenAI-compatible). Context size is set when the server starts (-c).
     Uses only the standard library; the proxy handler is emptied so Windows system proxies never see
     the localhost request."""
@@ -45,7 +45,9 @@ def _chat_llamacpp(cfg, model, messages, fmt) -> str:
     lc = cfg.get("llamacpp", {}) or {}
     url = str(lc.get("url", "http://127.0.0.1:8080")).rstrip("/") + "/v1/chat/completions"
     body = {"model": model, "messages": messages, "temperature": cfg.temperature, "seed": cfg.seed,
-            "max_tokens": cfg.generation.num_predict, "stream": False}
+            "max_tokens": num_predict or cfg.generation.num_predict, "stream": False}
+    if cfg.get("generation", {}).get("repeat_penalty"):
+        body["repeat_penalty"] = float(cfg.generation.repeat_penalty)   # e.g. 1.1; optional, off by default
     if fmt:
         body["response_format"] = {"type": "json_schema",
                                    "json_schema": {"name": "output", "strict": True, "schema": fmt}}
@@ -93,17 +95,17 @@ def server_identity(cfg) -> str:
     return ident
 
 
-def _chat(cfg, model, messages, fmt, cache: OutputCache) -> str:
+def _chat(cfg, model, messages, fmt, cache: OutputCache, num_predict=None) -> str:
     backend = str(cfg.get("backend", "ollama")).lower()
     options = {"temperature": cfg.temperature, "seed": cfg.seed, "num_ctx": cfg.num_ctx,
-               "num_predict": cfg.generation.num_predict}
+               "num_predict": num_predict or cfg.generation.num_predict}
     ident = server_identity(cfg) if backend == "llamacpp" else ""
     key = cache.key(backend, model, ident, messages, options, fmt)
     hit = cache.get(key)
     if hit is not None:
         return hit
     if backend == "llamacpp":
-        text = _chat_llamacpp(cfg, model, messages, fmt)
+        text = _chat_llamacpp(cfg, model, messages, fmt, num_predict)
     elif backend == "ollama":
         text = _chat_ollama(cfg, model, messages, fmt, options)
     else:
@@ -112,19 +114,67 @@ def _chat(cfg, model, messages, fmt, cache: OutputCache) -> str:
     return text
 
 
+def _claims_from(items) -> list[dict]:
+    """Normalise claim objects and drop exact repeats (same text and same citations): a small model that falls into
+    a repetition loop otherwise inflates the claim counts and every claim-level rate."""
+    out, seen = [], set()
+    for c in items:
+        if isinstance(c, dict) and str(c.get("text", "")).strip():
+            ids = c.get("evidence_ids", [])
+            ids = ids if isinstance(ids, list) else [ids]
+            claim = {"text": str(c["text"]).strip(), "evidence_ids": [str(x) for x in ids]}
+            key = (" ".join(claim["text"].lower().split()), tuple(claim["evidence_ids"]))
+            if key not in seen:
+                seen.add(key)
+                out.append(claim)
+    return out
+
+
+def _salvage_claims(raw: str) -> list[dict]:
+    """Complete claim objects from a JSON answer cut off by the token limit (nothing is invented)."""
+    m = re.search(r'"claims"\s*:\s*\[', raw)
+    if not m:
+        return []
+    dec, i, items = json.JSONDecoder(), m.end(), []
+    while True:
+        while i < len(raw) and raw[i] in " \t\r\n,":
+            i += 1
+        if i >= len(raw) or raw[i] != "{":
+            break
+        try:
+            obj, i = dec.raw_decode(raw, i)
+        except json.JSONDecodeError:
+            break
+        items.append(obj)
+    return _claims_from(items)
+
+
 def generate_claims(cfg, model, question, evidence_text, cache) -> dict:
+    """Structured claims. A truncated or invalid JSON answer is retried with a larger token budget
+    (generation.parse_retries, default 1; generation.retry_factor, default 2). If that also fails, complete claims
+    are salvaged from the cut-off text (result['truncated']=True); only if nothing is usable is it a parse_error."""
     # the claims prompt is selectable (config key `claims_prompt`) so prompt variants can be compared as ablations
-    raw = _chat(cfg, model, _messages(cfg, str(cfg.get("claims_prompt", "system_claims.txt")), question, evidence_text),
-                CLAIM_SCHEMA, cache)
-    try:
-        data = json.loads(raw)
-        claims = [{"text": str(c.get("text", "")).strip(),
-                   "evidence_ids": [str(x) for x in c.get("evidence_ids", [])]}
-                  for c in data.get("claims", []) if str(c.get("text", "")).strip()]
-        return {"claims": claims, "insufficient_evidence": bool(data.get("insufficient_evidence")),
-                "raw": raw}
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return {"claims": [], "insufficient_evidence": True, "raw": raw, "parse_error": True}
+    msgs = _messages(cfg, str(cfg.get("claims_prompt", "system_claims.txt")), question, evidence_text)
+    gen = cfg.get("generation", {}) or {}
+    retries, factor = int(gen.get("parse_retries", 1)), float(gen.get("retry_factor", 2))
+    budget = int(gen.get("num_predict", 800))
+    raw, attempt = _chat(cfg, model, msgs, CLAIM_SCHEMA, cache), 0
+    while True:
+        try:
+            data = json.loads(raw)
+            return {"claims": _claims_from(data.get("claims", [])),
+                    "insufficient_evidence": bool(data.get("insufficient_evidence")), "raw": raw, "retries": attempt}
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+        if attempt >= retries:
+            break
+        attempt += 1
+        budget = int(budget * factor)
+        raw = _chat(cfg, model, msgs, CLAIM_SCHEMA, cache, num_predict=budget)
+    salvaged = _salvage_claims(raw)
+    if salvaged:
+        return {"claims": salvaged, "insufficient_evidence": False, "raw": raw, "truncated": True, "retries": attempt}
+    return {"claims": [], "insufficient_evidence": True, "raw": raw, "parse_error": True, "retries": attempt}
 
 
 def generate_baseline(cfg, model, question, evidence_text, cache) -> dict:

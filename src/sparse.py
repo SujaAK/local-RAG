@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import re
 
+from .utils import normalize_unicode
+
 STOP = set("a an the of and or to in on for with by is are was were be been this that these those as at from it its "
            "we our which can not no but if than then also such into over".split())
 _TOK = re.compile(r"[a-z0-9]+(?:[-'][a-z0-9]+)*")
 
 
 def tokenize(text: str) -> list[str]:
-    return [t for t in _TOK.findall(text.lower()) if t not in STOP]
+    return [t for t in _TOK.findall(normalize_unicode(text).lower()) if t not in STOP]
 
 
 class BM25Index:

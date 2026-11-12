@@ -14,7 +14,7 @@ import pandas as pd
 
 from src.crypto import get_passphrase
 from src.manifest import write_manifest
-from src.pipeline import Pipeline
+from src.pipeline import SYSTEMS, Pipeline
 from src.store import write_text_private
 from src.utils import ROOT, get_logger, load_config, rpath
 
@@ -29,7 +29,17 @@ def load_questions(cfg, split: str) -> list[dict]:
     return [q for q in qs if q.get("split") == split]
 
 
-def score_one(pipe: Pipeline, q: dict, res: dict, ks, checker) -> dict:
+def scoring_ranking(pipe: Pipeline, q: dict, res: dict, ks, system: str | None) -> list[dict]:
+    """Chunks used for retrieval metrics. The answer only packs final_k chunks, so recall@10 computed from
+    res["retrieved"] could never look past rank final_k. Re-rank to depth max(ks) with the same retriever settings
+    (the top final_k are identical to what the system used). Keep retrieval.rerank_pool, dense_k and sparse_k >= max(ks)."""
+    if system not in SYSTEMS:
+        return [pipe.chunks[c] for c in res["retrieved"]]
+    spec = SYSTEMS[system]
+    return pipe.retriever.retrieve(q["question"], spec["mode"], spec["rerank"], final_k=max(ks))
+
+
+def score_one(pipe: Pipeline, q: dict, res: dict, ks, checker, system: str | None = None) -> dict:
     row = {"qid": q["id"], "type": q.get("type"), "answerable": q.get("answerable", True),
            "abstained": res["abstained"], "n_generated": res["n_generated"],
            "n_shown": len(res["shown"]), "coverage": M.coverage(len(res["shown"]), res["n_generated"]),
@@ -38,8 +48,12 @@ def score_one(pipe: Pipeline, q: dict, res: dict, ks, checker) -> dict:
            "parse_error": float(bool(res.get("parse_error"))),
            "n_repaired": res.get("n_repaired", 0),
            "repaired_rate": (res.get("n_repaired", 0) / len(res["shown"])) if res["shown"] else float("nan")}
-    retrieved = [pipe.chunks[c] for c in res["retrieved"]]
+    retrieved = scoring_ranking(pipe, q, res, ks, system)
     row.update(M.retrieval_metrics(retrieved, q.get("gold_evidence", []), ks))
+    labels = [c.get("label") for c in res["claims"]]          # verifier labels BEFORE the abstention rule hides claims
+    row.update({"n_supported": labels.count("Supported"), "n_contested": labels.count("Contested"),
+                "n_unsupported": labels.count("Unsupported"), "n_insufficient": labels.count("Insufficient"),
+                "truncated": float(bool(res.get("truncated")))})
     ev = {e["id"]: e for e in res["evidence"]}
     shown = [res["claims"][i] for i in res["shown"]]
     if checker is not None and shown:   # automatic citation metrics, independent NLI model, same premise builder
@@ -101,7 +115,7 @@ def main():
             for q in qs:
                 res = pipe.answer(q["question"], system, model)
                 lines.append(json.dumps({"qid": q["id"], **res}, default=str))
-                r = score_one(pipe, q, res, cfg.eval.ks, checker)
+                r = score_one(pipe, q, res, cfg.eval.ks, checker, system)
                 r.update({"system": system, "model": model})
                 rows.append(r)
             # Raw outputs hold full evidence text: written encrypted in private mode (plaintext never on disk).

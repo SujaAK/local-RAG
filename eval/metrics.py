@@ -59,23 +59,30 @@ def retrieval_metrics(ranked: list[dict], gold: list[dict], ks=(5, 10)) -> dict:
 def citation_scores(claims: list[dict], evidence_by_id: dict, entails) -> dict:
     """entails(list_of_cited_texts, claim) -> bool. The callable must build its premise the same way S3 does
     (top-sentence premise, see src.verify.build_premise), never a truncated concatenation.
-    Recall: claim fully supported by its cited set. Precision: a citation is irrelevant iff it does not
-    support the claim alone AND the remaining citations still support it."""
+    Recall: claim fully supported by its cited set.
+    Precision (strict): a citation counts as relevant only if (a) the claim is supported by its full citation
+    set and (b) the citation is not redundant (it supports the claim alone, or the other citations do not).
+    Citations of unsupported claims and IDs that were never retrieved count as irrelevant. The literal ALCE
+    rule only flags redundancy, so it scores every citation of an unsupported claim, and every lone citation,
+    as relevant."""
     rec, prec_num, prec_den, fabricated = [], 0, 0, 0
     for c in claims:
-        ids = c.get("evidence_ids", [])
+        ids = list(dict.fromkeys(c.get("evidence_ids", [])))
         valid = [i for i in ids if i in evidence_by_id]
         fabricated += int(len(valid) != len(ids))
+        prec_den += len(ids)
         if not valid:
             rec.append(0.0)
             continue
         texts = {i: evidence_by_id[i]["text"] for i in valid}
-        rec.append(float(entails(list(texts.values()), c["text"])))
+        full = bool(entails(list(texts.values()), c["text"]))
+        rec.append(float(full))
+        if not full:
+            continue
         for i in valid:
             alone = entails([texts[i]], c["text"])
             rest = [texts[j] for j in valid if j != i]
             rest_ok = bool(rest) and entails(rest, c["text"])
-            prec_den += 1
             prec_num += int(alone or not rest_ok)
     n = len(claims)
     return {"citation_recall_auto": float(np.mean(rec)) if rec else float("nan"),

@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -43,14 +44,23 @@ def deep_update(base: dict, new: dict) -> dict:
     return base
 
 
+def _load_raw(path: Path, _chain: tuple = ()) -> dict:
+    """Read one YAML file and resolve `extends:` recursively (a config may extend a config that extends another)."""
+    path = Path(path).resolve()
+    if path in _chain:
+        raise ValueError(f"circular 'extends' in config: {path}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    base = raw.pop("extends", None)   # resolved next to the extending file, e.g. extends: config.yaml
+    if base:
+        raw = deep_update(_load_raw(path.parent / base, _chain + (path,)), raw)
+    return raw
+
+
 def load_config(path=None, overrides: dict | None = None) -> AttrDict:
     import os
 
     path = Path(path or os.environ.get("RAG_CONFIG") or ROOT / "config" / "config.yaml")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    base = raw.pop("extends", None)
-    if base:  # e.g. extends: config.yaml (resolved next to this file)
-        raw = deep_update(yaml.safe_load((path.parent / base).read_text(encoding="utf-8")) or {}, raw)
+    raw = _load_raw(path)
     if overrides:
         deep_update(raw, overrides)
     return _wrap(raw)
@@ -106,8 +116,15 @@ def approx_tokens(text: str) -> int:
 _SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"“(\[])")
 
 
+def normalize_unicode(s: str) -> str:
+    """NFKC fold: PDF ligatures (fi, fl, ffi), full-width forms and superscripts become plain text;
+    soft hyphens, zero-width spaces and BOMs are removed."""
+    s = unicodedata.normalize("NFKC", s)
+    return s.replace("\u00ad", "").replace("\u200b", "").replace("\ufeff", "")
+
+
 def split_sentences(text: str) -> list[str]:
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", normalize_unicode(text)).strip()
     if not text:
         return []
     return [s.strip() for s in _SENT_RE.split(text) if s.strip()]
@@ -115,6 +132,7 @@ def split_sentences(text: str) -> list[str]:
 
 def norm_text(s: str) -> str:
     """Lowercase, unify quotes/dashes, collapse whitespace (used by validators)."""
+    s = normalize_unicode(s)
     s = s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
     s = s.replace("–", "-").replace("—", "-").replace("\u00ad", "")
     return re.sub(r"\s+", " ", s).strip().lower()

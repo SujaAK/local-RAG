@@ -1,0 +1,8 @@
+# Post-fix configuration (v2). The preregistered config.win.topn.yaml is left untouched so its recorded hash still matches.
+# Changes vs topn, each motivated by run 20261110-214149-fixedA_nocache (see reverify.py outputs):
+#   premise_mode union  - a 3-sentence joined premise made the NLI model reject 14/26 verbatim claims (1-sentence: 5/26)
+#   contested false     - Contested fired on p_contra_other of unrelated passages (4/5 had p_entail >= 0.7); no conflict questions exist to validate it
+#   count_contested false - recorded explicitly because the manifest does not store code defaults
+extends: config.win.topn.yaml
+verify: {premise_mode: union, premise_pool: 6, contested: false}
+abstain: {count_contested: false}

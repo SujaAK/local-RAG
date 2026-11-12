@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 
 from .store import close_db, open_db
-from .utils import get_logger, rpath, sha256_file
+from .utils import get_logger, normalize_unicode, rpath, sha256_file
 
 log = get_logger("ingest")
 
@@ -81,7 +81,7 @@ def extract_pages(pdf_path: Path) -> list[dict]:
                     spans = [s for s in ln["spans"] if s["text"].strip()]
                     if not spans:
                         continue
-                    text = " ".join(s["text"].strip() for s in spans)
+                    text = normalize_unicode(" ".join(s["text"].strip() for s in spans))
                     size = max(s["size"] for s in spans)
                     bold = any(s["flags"] & 16 for s in spans)
                     lines.append({"text": text, "size": size, "bold": bold,

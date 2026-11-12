@@ -11,7 +11,7 @@ from . import stats
 
 METRICS = ["recall@5", "recall@10", "allgold@10", "mrr", "ndcg@10", "citation_precision_auto", "citation_recall_auto",
            "fabrication_rate", "fabrication_rate_raw", "coverage", "answered", "parse_error", "n_repaired", "repaired_rate",
-           "latency_total"]
+           "truncated", "n_supported", "n_contested", "n_unsupported", "n_insufficient", "latency_total"]
 
 
 def summary_table(df: pd.DataFrame, n_boot: int) -> pd.DataFrame:
@@ -26,11 +26,28 @@ def summary_table(df: pd.DataFrame, n_boot: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def paired_table(df: pd.DataFrame, n_boot: int, pairs=(("S0", "S1"), ("S1", "S2"), ("S2", "S3"), ("S3", "S3R"))) -> pd.DataFrame:
+# Confirmatory family for Holm correction: only (metric, pair) combinations where a difference is possible by design.
+#  - retrieval metrics: S1 vs S0 only (S1, S2, S3 share one retriever, so those differences are zero by construction)
+#  - coverage / answered: S3 vs S2 and S3R vs S3 only (S0-S2 never abstain on verification, so S1/S2 comparisons are structural)
+#  - latency: every consecutive pair
+# Everything else in METRICS (label counts, truncated, parse_error, ...) is descriptive: summary table only, no tests.
+ALL_PAIRS = (("S0", "S1"), ("S1", "S2"), ("S2", "S3"), ("S3", "S3R"))
+METRIC_PAIRS = {
+    **{m: (("S0", "S1"),) for m in ("recall@5", "recall@10", "mrr", "ndcg@10")},
+    **{m: (("S2", "S3"), ("S3", "S3R")) for m in ("coverage", "answered", "citation_precision_auto",
+                                                   "citation_recall_auto", "fabrication_rate")},
+    "latency_total": ALL_PAIRS,
+}
+
+
+def paired_table(df: pd.DataFrame, n_boot: int, metric_pairs: dict | None = None) -> pd.DataFrame:
+    metric_pairs = metric_pairs or METRIC_PAIRS
     recs = []
     for model, g in df.groupby("model"):
-        wide = {m: g.pivot(index="qid", columns="system", values=m) for m in METRICS if m in g}
-        for m, tab in wide.items():
+        for m, pairs in metric_pairs.items():
+            if m not in g:
+                continue
+            tab = g.pivot(index="qid", columns="system", values=m)
             for a, b in pairs:
                 if a in tab and b in tab:
                     r = stats.paired_bootstrap(tab[a].values, tab[b].values, n_boot)
@@ -68,7 +85,7 @@ def main():
     md = ["# Evaluation report", "", f"Run: `{run.name}`. Intervals: 95% bootstrap resampled by question.",
           "Treat small differences as inconclusive (see power warning, C1).",
           "`*_auto` citation metrics come from an NLI model; the human audit (eval.audit_sample) is the primary number.", "", "## Summary", "",
-          s.to_markdown(index=False), "", "## Paired comparisons (Holm-corrected)", "",
+          s.to_markdown(index=False), "", "## Paired comparisons (Holm-corrected over the confirmatory family only)", "",
           p.to_markdown(index=False) if len(p) else "n/a"]
     (run / "report.md").write_text("\n".join(md), encoding="utf-8")
     s.to_csv(run / "summary.csv", index=False)

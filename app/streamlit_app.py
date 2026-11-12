@@ -117,7 +117,7 @@ elif page == "Evidence and audit log":
         st.json(run_audit(cfg))
     log = Path(__file__).resolve().parents[1] / "logs" / "rag.log"
     if log.exists():
-        st.text("\n".join(log.read_text().splitlines()[-30:]))
+        st.text("\n".join(log.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]))
 
 elif page == "Settings":
     st.header("Settings (session only; edit config/config.yaml to persist)")
